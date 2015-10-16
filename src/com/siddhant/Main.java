@@ -13,112 +13,338 @@ import java.util.*;
 
 public class Main {
 
-    public static String IP = "172.20.205.82";
-    public static int MASTER_PORT = 25602;
-    static String FINGER_TABLE_DIRECTORY = "/home/siddhant/Documents/cs425/project/";
-    //    static int maxValue;
-    static int N = 16;
-    static int logN = 4;
+    public static String IP = "localhost";
+    public static int MASTER_PORT = 12345;
+    static String FINGER_TABLE_DIRECTORY = "/home/siddhant/Documents/cs425/project/fingertables/";
+    static String FILE_DIRECTORY = "/home/siddhant/Documents/cs425/project/files/";
+
+    static int N = 65536;
+    static int logN = 16;
+
+    public static boolean alreadyListening = false;
+    public static int myPort = 0;
+    public static ServerSocket listener;
+
 
     public static void main(String[] args) {
         Scanner scanner = new Scanner(System.in);
         while (true) {
             try {
-                Thread.sleep(1000);
+                Thread.sleep(500);
             } catch (Exception ignored) {
             }
             System.out.print("> Enter command: ");
             String command = scanner.next();
             switch (command) {
+                // join
                 case "j":
-                    System.out.print("> Enter 5 digit port: ");
-                    int port = scanner.nextInt();
-                    int nodeHash = getHash(port);
-                    ListenToSocket(nodeHash, port);
-                    if (port == MASTER_PORT) {
-                        ArrayList<String> contents = new ArrayList<>();
-                        for (int i = 1; i <= logN; i++) {
-                            int temp = (nodeHash + (int) Math.pow(2, i - 1)) % N;
-                            contents.add(String.valueOf(temp) + "\t" + nodeHash + "\t" + String.valueOf(MASTER_PORT));
+                    if (!alreadyListening) {
+                        System.out.print("> Enter 5 digit port: ");
+                        int port = scanner.nextInt();
+                        int nodeHash = getHash(port);
+                        ListenToSocket(nodeHash, port);
+                        alreadyListening = true;
+                        myPort = port;
+                        if (port == MASTER_PORT) {
+                            InitializeMasterPort(nodeHash);
+                        } else {
+                            InitializeOtherPorts(port, nodeHash);
                         }
-                        WriteToFile(String.valueOf(MASTER_PORT), contents);
-                        ArrayList<String> responsibility = new ArrayList<>();
-                        for (int i = 0; i < N; i++) {
-                            responsibility.add(String.valueOf(i) + "\tabc_" + String.valueOf(i));
-                        }
-                        responsibility.add(0, "min\t" + String.valueOf((nodeHash + 1) % N));
-                        WriteToFile(String.valueOf(MASTER_PORT) + "_files", responsibility);
                     } else {
-                        try {
-                            Socket socket = new Socket(IP, MASTER_PORT);
-                            OutputStream os = socket.getOutputStream();
-                            InputStream is = socket.getInputStream();
-                            DataOutputStream dos = new DataOutputStream(os);
-                            String toWrite = "successor\t" + String.valueOf(nodeHash) + "\n";
-                            dos.writeBytes(toWrite);
-                            dos.flush();
-                            InputStreamReader isr = new InputStreamReader(is);
-                            BufferedReader br = new BufferedReader(isr);
-                            String successorNodePort = br.readLine();
-                            String successorNodeHash = String.valueOf(getHash(Integer.parseInt(successorNodePort)));
-                            os.close();
-                            is.close();
-                            dos.close();
-                            isr.close();
-                            br.close();
-                            socket.close();
-
-                            socket = new Socket(IP, Integer.valueOf(successorNodePort));
-                            os = socket.getOutputStream();
-                            is = socket.getInputStream();
-                            dos = new DataOutputStream(os);
-                            toWrite = "UpdateFileList\t" + String.valueOf(nodeHash) + "\n";
-                            dos.writeBytes(toWrite);
-                            dos.flush();
-                            isr = new InputStreamReader(is);
-                            br = new BufferedReader(isr);
-                            String receivedData = br.readLine();
-                            os.close();
-                            is.close();
-                            dos.close();
-                            isr.close();
-                            br.close();
-                            socket.close();
-                            String[] data = receivedData.split(";");
-                            ArrayList<String> received = new ArrayList<>(Arrays.asList(data));
-                            WriteToFile(String.valueOf(port) + "_files", received);
-
-
-                            socket = new Socket(IP, Integer.valueOf(successorNodePort));
-                            os = socket.getOutputStream();
-                            dos = new DataOutputStream(os);
-                            toWrite = "UpdateFingerTables\t" + String.valueOf(nodeHash) + "\t" + String.valueOf(port)
-                                    + "\t" + successorNodeHash + "\t" + successorNodePort + "\n";
-                            dos.writeBytes(toWrite);
-                            dos.flush();
-                            os.close();
-                            dos.close();
-                            socket.close();
-
-                            //System.out.print(reply);
-                        } catch (Exception ex) {
-                            ex.printStackTrace();
-                        }
+                        System.out.println("This program is already listening");
                     }
                     break;
-                default:
+                // just listen without joining
+                case "l":
+                    if (!alreadyListening) {
+                        System.out.print("> Enter 5 digit port: ");
+                        int port1 = scanner.nextInt();
+                        int nodeHash1 = getHash(port1);
+                        ListenToSocket(nodeHash1, port1);
+                        alreadyListening = true;
+                        myPort = port1;
+                    } else {
+                        System.out.println("This program is already listening");
+                    }
                     break;
+                // find a file location
+                case "f":
+                    if (alreadyListening) {
+                        System.out.print("> Enter file name: ");
+                        String filename = scanner.next();
+                        int fileHash = getSHA1Hash(filename);
+                        String filePort = getFilePort(fileHash);
+                        if (filePort.equals("null")) {
+                            System.out.println("The file does not exists");
+                        } else {
+                            System.out.println("The file exists at port: " + filePort);
+                        }
+                    } else {
+                        System.out.println("The program is not listening to any port");
+                    }
+                    break;
+                // upload a file
+                case "u":
+                    if (alreadyListening) {
+                        System.out.print("> Enter file name: ");
+                        String filename1 = scanner.next();
+                        File f = new File(FILE_DIRECTORY + String.valueOf(myPort) + "/upload/" + filename1);
+                        if (f.exists() && !f.isDirectory()) {
+                            int fileHash1 = getSHA1Hash(filename1);
+                            uploadFile(fileHash1);
+                        } else {
+                            System.out.println("File doesn't exist");
+                        }
+                    } else {
+                        System.out.println("The program is not listening to any port");
+                    }
+                    break;
+                // download a file
+                case "d":
+                    if (alreadyListening) {
+                        System.out.print("> Enter file name: ");
+                        String filename2 = scanner.next();
+                        int fileHash2 = getSHA1Hash(filename2);
+                        String filePort2 = getFilePort(fileHash2);
+                        if (filePort2.equals("null")) {
+                            System.out.println("The file does not exists");
+                        } else {
+                            DownloadFile(filePort2, filename2);
+                            System.out.println("The file exists at port: " + filePort2);
+                        }
+                    } else {
+                        System.out.println("The program is not listening to any port");
+                    }
+                    break;
+                // quit the program
+                case "q":
+                    break;
+                default:
+                    System.out.println("Invalid command");
+                    break;
+            }
+            if (command.equals("q")) {
+                try {
+                    System.out.println("Program exiting..");
+                    listener.close();
+                } catch (Exception e) {
+                    e.printStackTrace();
+                }
+                break;
             }
         }
     }
 
-    private static void ListenToSocket(final int nodeId, final int port) {
+    private static void DownloadFile(String filePort, String filename) {
+        try {
+            Socket socket = new Socket(IP, Integer.parseInt(filePort));
+            DataOutputStream dos = new DataOutputStream(socket.getOutputStream());
+            String toWrite = "downloadfile\t" + String.valueOf(filename) + "\n";
+            dos.writeBytes(toWrite);
+            dos.flush();
+            InputStream in = socket.getInputStream();
+            String filepath = FILE_DIRECTORY + String.valueOf(myPort) + "/download/" + filename;
+            OutputStream out = new FileOutputStream(filepath);
+            copy(in, out);
+            out.close();
+            in.close();
+        } catch (Exception ex) {
+            ex.printStackTrace();
+        }
+    }
+
+    static void copy(InputStream in, OutputStream out) throws IOException {
+        byte[] buf = new byte[8192];
+        int len;
+        while ((len = in.read(buf)) != -1) {
+            out.write(buf, 0, len);
+        }
+    }
+
+    private static void uploadFile(int fileHash) {
+        try {
+            String portOfFile = getSuccessorPort(String.valueOf(getHash(myPort)), String.valueOf(fileHash));
+            if (Integer.parseInt(portOfFile) == myPort) {
+                String fileDestinationPort = getFileDestinationPort(portOfFile, fileHash);
+                if (fileDestinationPort.equals("null")) {
+                    changeFilePort(portOfFile, fileHash, portOfFile);
+                    System.out.println("File uploaded");
+                } else {
+                    System.out.println("File with the same key already exists");
+                }
+            } else {
+                Socket socket1 = new Socket(IP, Integer.parseInt(portOfFile));
+                DataOutputStream dos1 = new DataOutputStream(socket1.getOutputStream());
+                String toWrite1 = "filename\t" + String.valueOf(fileHash) + "\n";
+                dos1.writeBytes(toWrite1);
+                dos1.flush();
+                InputStreamReader isr1 = new InputStreamReader(socket1.getInputStream());
+                BufferedReader br1 = new BufferedReader(isr1);
+                String fileDestinationPort = br1.readLine();
+                socket1.close();
+                if (fileDestinationPort.equals("null")) {
+                    Socket socket = new Socket(IP, Integer.parseInt(portOfFile));
+                    DataOutputStream dos = new DataOutputStream(socket.getOutputStream());
+                    String toWrite = "file_upload\t" + String.valueOf(fileHash) + "\t" + String.valueOf(myPort) + "\n";
+                    dos.writeBytes(toWrite);
+                    dos.flush();
+                    InputStreamReader isr = new InputStreamReader(socket.getInputStream());
+                    BufferedReader br = new BufferedReader(isr);
+                    String response = br.readLine();
+                    socket.close();
+                    if (response.equals("success")) {
+                        System.out.println("File uploaded");
+                    } else {
+                        System.out.println("File with the same key already exists");
+                    }
+                } else {
+                    System.out.println("File with the same key already exists");
+                }
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
+    private static void changeFilePort(String portOfFile, int fileHash, String filename) {
+        ArrayList<String> contents = new ArrayList<>();
+        try (BufferedReader reader = new BufferedReader(new FileReader(FINGER_TABLE_DIRECTORY + portOfFile + "_files"))) {
+            String line;
+            line = reader.readLine();
+            contents.add(line);
+            while ((line = reader.readLine()) != null) {
+                String[] temp = line.split("\t");
+                Integer fileKey = Integer.parseInt(temp[0]);
+                if (fileHash == fileKey) {
+                    contents.add(temp[0] + "\t" + filename);
+                } else {
+                    contents.add(line);
+                }
+            }
+            WriteToFile(portOfFile + "_files", contents);
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
+    private static String getFilePort(int fileHash) {
+        try {
+            String portOfFile = getSuccessorPort(String.valueOf(getHash(myPort)), String.valueOf(fileHash));
+            if (Integer.parseInt(portOfFile) == myPort) {
+                String fileDestinationPort = getFileDestinationPort(portOfFile, fileHash);
+                if (fileDestinationPort.equals("null")) {
+                    return "null";
+                } else {
+                    return fileDestinationPort;
+                }
+            } else {
+                Socket socket = new Socket(IP, Integer.parseInt(portOfFile));
+                DataOutputStream dos = new DataOutputStream(socket.getOutputStream());
+                String toWrite = "filename\t" + String.valueOf(fileHash) + "\n";
+                dos.writeBytes(toWrite);
+                dos.flush();
+                InputStreamReader isr = new InputStreamReader(socket.getInputStream());
+                BufferedReader br = new BufferedReader(isr);
+                String fileDestinationPort = br.readLine();
+                socket.close();
+                if (fileDestinationPort.equals("null")) {
+                    return "null";
+                } else {
+                    return fileDestinationPort;
+                }
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        return "null";
+    }
+
+    private static String getFileDestinationPort(String portOfFile, int fileHash) {
+        try (BufferedReader reader = new BufferedReader(new FileReader(FINGER_TABLE_DIRECTORY + portOfFile + "_files"))) {
+            String line;
+            reader.readLine();
+            while ((line = reader.readLine()) != null) {
+                String[] temp = line.split("\t");
+                Integer fileKey = Integer.parseInt(temp[0]);
+                if (fileHash == fileKey) {
+                    return temp[1];
+                }
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        return "null";
+    }
+
+    private static void InitializeOtherPorts(int port, int nodeHash) {
+        try {
+            // query master node for successor of this newly created node
+            Socket socket = new Socket(IP, MASTER_PORT);
+            DataOutputStream dos = new DataOutputStream(socket.getOutputStream());
+            String toWrite = "successor\t" + String.valueOf(nodeHash) + "\n";
+            dos.writeBytes(toWrite);
+            dos.flush();
+            InputStreamReader isr = new InputStreamReader(socket.getInputStream());
+            BufferedReader br = new BufferedReader(isr);
+            String successorNodePort = br.readLine();
+            String successorNodeHash = String.valueOf(getHash(Integer.parseInt(successorNodePort)));
+            socket.close();
+
+            // send a command to its successor node to update its file responsibility
+            // the successor node will update its responsibility and reply back with
+            // this new node's responsibility
+            socket = new Socket(IP, Integer.valueOf(successorNodePort));
+            dos = new DataOutputStream(socket.getOutputStream());
+            toWrite = "UpdateFileList\t" + String.valueOf(nodeHash) + "\n";
+            dos.writeBytes(toWrite);
+            dos.flush();
+            isr = new InputStreamReader(socket.getInputStream());
+            br = new BufferedReader(isr);
+            String receivedData = br.readLine();
+            socket.close();
+            String[] data = receivedData.split(";");
+            ArrayList<String> received = new ArrayList<>(Arrays.asList(data));
+            WriteToFile(String.valueOf(port) + "_files", received);
+
+            // send a command to its successor node to update its finger table
+            // the successor node will in-turn forward this to its own successor till
+            // this new node is reached again. After hitting back again this node
+            // will create it's finger table
+            socket = new Socket(IP, Integer.valueOf(successorNodePort));
+            dos = new DataOutputStream(socket.getOutputStream());
+            toWrite = "UpdateFingerTables\t" + String.valueOf(nodeHash) + "\t" + String.valueOf(port)
+                    + "\t" + successorNodeHash + "\t" + successorNodePort + "\n";
+            dos.writeBytes(toWrite);
+            dos.flush();
+            socket.close();
+
+        } catch (Exception ex) {
+            ex.printStackTrace();
+        }
+    }
+
+    private static void InitializeMasterPort(int nodeHash) {
+        ArrayList<String> contents = new ArrayList<>();
+        for (int i = 1; i <= logN; i++) {
+            int temp = (nodeHash + (int) Math.pow(2, i - 1)) % N;
+            contents.add(String.valueOf(temp) + "\t" + nodeHash + "\t" + String.valueOf(MASTER_PORT));
+        }
+        WriteToFile(String.valueOf(MASTER_PORT), contents);
+        ArrayList<String> responsibility = new ArrayList<>();
+        for (int i = 0; i < N; i++) {
+            responsibility.add(String.valueOf(i) + "\tnull");
+        }
+        responsibility.add(0, "min\t" + String.valueOf((nodeHash + 1) % N));
+        WriteToFile(String.valueOf(MASTER_PORT) + "_files", responsibility);
+    }
+
+    private static void ListenToSocket(final int hash, final int port) {
         new Thread(new Runnable() {
             @Override
             public void run() {
                 try {
                     System.out.println("> Listening on port " + String.valueOf(port));
-                    ServerSocket listener = new ServerSocket(port);
+                    listener = new ServerSocket(port);
                     listener.setReuseAddress(true);
                     try {
                         while (true) {
@@ -139,72 +365,97 @@ public class Main {
                                 String nodePort = temp[2];
                                 String succHash = temp[3];
                                 String succPort = temp[4];
-                                if (Integer.parseInt(nodeHash) != getHash(port)) {
-                                    UpdateFingerTable(String.valueOf(port), nodeHash, nodePort, succHash);
-                                    String mySuccessor = getOwnSuccessor(String.valueOf(port));
-                                    Socket socket1 = new Socket(IP, Integer.valueOf(mySuccessor));
-                                    OutputStream os1 = socket1.getOutputStream();
-                                    DataOutputStream dos1 = new DataOutputStream(os1);
-                                    dos1.writeBytes(command);
-                                    dos1.flush();
-                                    os1.close();
-                                    dos1.close();
-                                    socket1.close();
-                                } else {
-                                    int min = 0;
-                                    try (BufferedReader reader = new BufferedReader(new FileReader(FINGER_TABLE_DIRECTORY + String.valueOf(port) + "_files"))) {
-                                        String line;
-                                        if ((line = reader.readLine()) != null) {
-                                            min = Integer.parseInt(line.split("\t")[1]);
-                                        }
-                                    }
-
-                                    ArrayList<String> contents = new ArrayList<>();
-                                    for (int i = 1; i <= logN; i++) {
-                                        int temp1 = (nodeId + (int) Math.pow(2, i - 1)) % N;
-                                        if (isBetween(min, nodeId, temp1)) {
-                                            contents.add(String.valueOf(temp1) + "\t" + nodeId + "\t" + String.valueOf(port));
-                                        } else {
-                                            Socket socket1 = new Socket(IP, Integer.parseInt(succPort));
-                                            OutputStream os1 = socket1.getOutputStream();
-                                            InputStream is1 = socket1.getInputStream();
-                                            DataOutputStream dos1 = new DataOutputStream(os1);
-                                            String toWrite = "successor\t" + String.valueOf(temp1) + "\n";
-                                            dos1.writeBytes(toWrite);
-                                            dos1.flush();
-                                            InputStreamReader isr1 = new InputStreamReader(is1);
-                                            BufferedReader br1 = new BufferedReader(isr1);
-                                            String successorNodePort = br1.readLine();
-                                            String successorNodeHash = String.valueOf(getHash(Integer.parseInt(successorNodePort)));
-                                            os1.close();
-                                            is1.close();
-                                            dos1.close();
-                                            isr1.close();
-                                            br1.close();
-                                            socket1.close();
-                                            contents.add(String.valueOf(temp1) + "\t" + successorNodeHash + "\t" + successorNodePort);
-                                        }
-                                    }
-                                    WriteToFile(String.valueOf(port), contents);
-                                }
+                                UpdateFingerTableAndForwardCommand(command, port, hash, nodeHash, nodePort, succHash, succPort);
                             } else if (command.contains("UpdateFileList")) {
                                 String[] temp = command.split("\t");
                                 String dataToSend = updateFileResponsibility(String.valueOf(port), temp[1]);
                                 DataOutputStream dos = new DataOutputStream(os);
                                 dos.writeBytes(dataToSend + "\n");
                                 dos.flush();
+                            } else if (command.contains("filename")) {
+                                System.out.println("File name query on port " + String.valueOf(port));
+                                String[] temp = command.split("\t");
+                                String dataToSend = getFileDestinationPort(String.valueOf(port), Integer.parseInt(temp[1]));
+                                DataOutputStream dos = new DataOutputStream(os);
+                                dos.writeBytes(dataToSend + "\n");
+                                dos.flush();
+                            } else if (command.contains("file_upload")) {
+                                String[] temp = command.split("\t");
+                                changeFilePort(String.valueOf(port), Integer.parseInt(temp[1]), temp[2]);
+                                DataOutputStream dos = new DataOutputStream(os);
+                                dos.writeBytes("success" + "\n");
+                                dos.flush();
+                            } else if (command.contains("downloadfile")) {
+                                String[] temp = command.split("\t");
+                                InputStream in = new FileInputStream(FILE_DIRECTORY + String.valueOf(port) + "/upload/" + temp[1]);
+                                copy(in, os);
+                                os.close();
+                                in.close();
                             }
                         }
                     } catch (Exception ex) {
-                        ex.printStackTrace();
+                        //ex.printStackTrace();
                         listener.close();
                     }
                 } catch (Exception ignored) {
-                    ignored.printStackTrace();
-                    //listener.close();
+                    //ignored.printStackTrace();
                 }
             }
         }).start();
+    }
+
+    private static void UpdateFingerTableAndForwardCommand(String command, int currentPort, int currentHash, String nodeHash, String nodePort, String succHash, String succPort) {
+        try {
+            // If not hit back on current node update your current finger table
+            // and forward the query
+            if (Integer.parseInt(nodeHash) != currentHash) {
+                UpdateFingerTable(String.valueOf(currentPort), nodeHash, nodePort, succHash);
+                String mySuccessor = getOwnSuccessor(String.valueOf(currentPort));
+                Socket socket1 = new Socket(IP, Integer.valueOf(mySuccessor));
+                DataOutputStream dos1 = new DataOutputStream(socket1.getOutputStream());
+                dos1.writeBytes(command);
+                dos1.flush();
+                dos1.close();
+                socket1.close();
+            }
+            // hit back on current node
+            else {
+
+                // first find min responsibility of this node
+                int min = 0;
+                try (BufferedReader reader = new BufferedReader(new FileReader(FINGER_TABLE_DIRECTORY + String.valueOf(currentPort) + "_files"))) {
+                    String line;
+                    if ((line = reader.readLine()) != null) {
+                        min = Integer.parseInt(line.split("\t")[1]);
+                    }
+                }
+                ArrayList<String> contents = new ArrayList<>();
+                for (int i = 1; i <= logN; i++) {
+                    int temp1 = (currentHash + (int) Math.pow(2, i - 1)) % N;
+
+                    // if the value of temp1 is between min and currentHash then successor of temp1
+                    // is definitely currentHash
+                    if (isBetween(min, currentHash, temp1)) {
+                        contents.add(String.valueOf(temp1) + "\t" + currentHash + "\t" + String.valueOf(currentPort));
+                    } else {
+                        Socket socket1 = new Socket(IP, Integer.parseInt(succPort));
+                        DataOutputStream dos1 = new DataOutputStream(socket1.getOutputStream());
+                        String toWrite = "successor\t" + String.valueOf(temp1) + "\n";
+                        dos1.writeBytes(toWrite);
+                        dos1.flush();
+                        InputStreamReader isr1 = new InputStreamReader(socket1.getInputStream());
+                        BufferedReader br1 = new BufferedReader(isr1);
+                        String successorNodePort = br1.readLine();
+                        String successorNodeHash = String.valueOf(getHash(Integer.parseInt(successorNodePort)));
+                        socket1.close();
+                        contents.add(String.valueOf(temp1) + "\t" + successorNodeHash + "\t" + successorNodePort);
+                    }
+                }
+                WriteToFile(String.valueOf(currentPort), contents);
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
     }
 
     private static String updateFileResponsibility(String filename, String nodeHash1) {
@@ -235,12 +486,10 @@ public class Main {
                 toBeSent += ";" + item;
             }
             return toBeSent;
-
         } catch (Exception ex) {
-
+            ex.printStackTrace();
         }
         return "";
-
     }
 
     private static String getOwnSuccessor(String filename) {
@@ -253,7 +502,7 @@ public class Main {
                 }
             }
         } catch (Exception ex) {
-
+            ex.printStackTrace();
         }
         return "";
     }
@@ -270,8 +519,7 @@ public class Main {
                     return filename;
                 } else {
                     String successorPort = getNextPortFromFingerTable(filename, queryNodeId);
-                    String finalPort = getPortFromNextNode(queryNodeId, successorPort);
-                    return finalPort;
+                    return getPortFromNextNode(queryNodeId, successorPort);
                 }
             }
         } catch (Exception ex) {
@@ -283,20 +531,13 @@ public class Main {
     private static String getPortFromNextNode(String queryNodeId, String successorPort) {
         try {
             Socket socket = new Socket(IP, Integer.parseInt(successorPort));
-            OutputStream os = socket.getOutputStream();
-            InputStream is = socket.getInputStream();
-            DataOutputStream dos = new DataOutputStream(os);
+            DataOutputStream dos = new DataOutputStream(socket.getOutputStream());
             String toWrite = "successor\t" + queryNodeId + "\n";
             dos.writeBytes(toWrite);
             dos.flush();
-            InputStreamReader isr = new InputStreamReader(is);
+            InputStreamReader isr = new InputStreamReader(socket.getInputStream());
             BufferedReader br = new BufferedReader(isr);
             String successorNode = br.readLine();
-            os.close();
-            is.close();
-            dos.close();
-            isr.close();
-            br.close();
             socket.close();
             return successorNode;
         } catch (Exception e) {
@@ -325,7 +566,7 @@ public class Main {
                 }
                 previous = temp[2];
             }
-        } catch (Exception ex) {
+        } catch (Exception ignored) {
 
         }
         return succ_1;
@@ -384,50 +625,22 @@ public class Main {
             }
             Path out = Paths.get(FINGER_TABLE_DIRECTORY + filename);
             Files.write(out, contents, Charset.defaultCharset());
-        } catch (Exception e) {
+        } catch (Exception ignored) {
         }
     }
 
-    public static String toSHA1(String id) {
+    public static int getSHA1Hash(String id) {
         MessageDigest md;
         byte[] bytes = id.getBytes();
         try {
             md = MessageDigest.getInstance("SHA-1");
-            return toHexString(md.digest(bytes)).substring(0, 2);
+            byte[] temp = md.digest(bytes);
+            int hash = temp[1] & 0xFF | temp[0] & 0xFF << 8;
+            return hash;
         } catch (NoSuchAlgorithmException e) {
-            return "";
+            return 0;
         }
     }
-
-    public static byte[] toSHA1ByteArray(String id) {
-        MessageDigest md;
-        byte[] bytes = id.getBytes();
-        try {
-            md = MessageDigest.getInstance("SHA-1");
-            return new byte[]{md.digest(bytes)[0]};
-        } catch (NoSuchAlgorithmException e) {
-            return new byte[]{};
-        }
-    }
-
-    private static String toHexString(byte[] bytes) {
-        Formatter formatter = new Formatter();
-        for (byte b : bytes) {
-            formatter.format("%02x", b);
-        }
-        return formatter.toString();
-    }
-
-    public static byte[] hexStringToByteArray(String s) {
-        int len = s.length();
-        byte[] data = new byte[len / 2];
-        for (int i = 0; i < len; i += 2) {
-            data[i / 2] = (byte) ((Character.digit(s.charAt(i), 16) << 4)
-                    + Character.digit(s.charAt(i + 1), 16));
-        }
-        return data;
-    }
-
 }
 
 
