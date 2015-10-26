@@ -120,6 +120,15 @@ public class Main {
                     break;
                 // find route
                 case "r":
+                    if (alreadyListening) {
+                        System.out.print("> Enter file name: ");
+                        String filename2 = scanner.next();
+                        int fileHash2 = getSHA1Hash(filename2);
+                        String route = getFileRoute(fileHash2);
+                        System.out.println(route);
+                    } else {
+                        System.out.println("The program is not listening to any port");
+                    }
                     break;
                 // quit the program
                 case "q":
@@ -257,6 +266,34 @@ public class Main {
                 } else {
                     return fileDestinationPort;
                 }
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        return "null";
+    }
+
+    private static String getFileRoute(int fileHash) {
+        try {
+            String portOfFile = getSuccessorPort(String.valueOf(getHash(myPort)), String.valueOf(fileHash));
+            if (Integer.parseInt(portOfFile) == myPort) {
+                String fileDestinationPort = getFileDestinationPort(portOfFile, fileHash);
+                if (fileDestinationPort.equals("null")) {
+                    return String.valueOf(myPort) + " -> " + "null";
+                } else {
+                    return String.valueOf(myPort) + " -> " + fileDestinationPort;
+                }
+            } else {
+                Socket socket = new Socket(IP, Integer.parseInt(portOfFile));
+                DataOutputStream dos = new DataOutputStream(socket.getOutputStream());
+                String toWrite = "route\t" + String.valueOf(fileHash) + "\n";
+                dos.writeBytes(toWrite);
+                dos.flush();
+                InputStreamReader isr = new InputStreamReader(socket.getInputStream());
+                BufferedReader br = new BufferedReader(isr);
+                String route = br.readLine();
+                socket.close();
+                return String.valueOf(myPort) + " -> " + route;
             }
         } catch (Exception e) {
             e.printStackTrace();
@@ -427,6 +464,12 @@ public class Main {
                                 copy(in, os);
                                 os.close();
                                 in.close();
+                            } else if (command.contains("route")) {
+                                String[] temp = command.split("\t");
+                                String a = getFileRoute(Integer.parseInt(temp[1]));
+                                DataOutputStream dos = new DataOutputStream(os);
+                                dos.writeBytes(a + "\n");
+                                dos.flush();
                             }
                         }
                     } catch (Exception ex) {
