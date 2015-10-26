@@ -1,6 +1,7 @@
 package com.siddhant;
 
 import java.io.*;
+import java.net.BindException;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.nio.charset.Charset;
@@ -42,8 +43,8 @@ public class Main {
                         System.out.print("> Enter 5 digit port: ");
                         int port = scanner.nextInt();
                         int nodeHash = getHash(port);
-                        ListenToSocket(nodeHash, port);
                         alreadyListening = true;
+                        ListenToSocket(nodeHash, port);
                         myPort = port;
                         if (port == MASTER_PORT) {
                             InitializeMasterPort(nodeHash);
@@ -60,8 +61,8 @@ public class Main {
                         System.out.print("> Enter 5 digit port: ");
                         int port1 = scanner.nextInt();
                         int nodeHash1 = getHash(port1);
-                        ListenToSocket(nodeHash1, port1);
                         alreadyListening = true;
+                        ListenToSocket(nodeHash1, port1);
                         myPort = port1;
                     } else {
                         System.out.println("This program is already listening");
@@ -110,11 +111,15 @@ public class Main {
                             System.out.println("The file does not exists");
                         } else {
                             DownloadFile(filePort2, filename2);
-                            System.out.println("The file exists at port: " + filePort2);
+                            System.out.println("Downloaded from port: " + filePort2);
+//                            System.out.println("The file exists at port: " + filePort2);
                         }
                     } else {
                         System.out.println("The program is not listening to any port");
                     }
+                    break;
+                // find route
+                case "r":
                     break;
                 // quit the program
                 case "q":
@@ -128,7 +133,7 @@ public class Main {
                     System.out.println("Program exiting..");
                     listener.close();
                 } catch (Exception e) {
-                    e.printStackTrace();
+//                    e.printStackTrace();
                 }
                 break;
             }
@@ -290,34 +295,40 @@ public class Main {
             String successorNodeHash = String.valueOf(getHash(Integer.parseInt(successorNodePort)));
             socket.close();
 
-            // send a command to its successor node to update its file responsibility
-            // the successor node will update its responsibility and reply back with
-            // this new node's responsibility
-            socket = new Socket(IP, Integer.valueOf(successorNodePort));
-            dos = new DataOutputStream(socket.getOutputStream());
-            toWrite = "UpdateFileList\t" + String.valueOf(nodeHash) + "\n";
-            dos.writeBytes(toWrite);
-            dos.flush();
-            isr = new InputStreamReader(socket.getInputStream());
-            br = new BufferedReader(isr);
-            String receivedData = br.readLine();
-            socket.close();
-            String[] data = receivedData.split(";");
-            ArrayList<String> received = new ArrayList<>(Arrays.asList(data));
-            WriteToFile(String.valueOf(port) + "_files", received);
+            if (successorNodePort.equals(String.valueOf(port))) {
+                System.out.println("This node already exists.. try another value");
+            } else {
 
-            // send a command to its successor node to update its finger table
-            // the successor node will in-turn forward this to its own successor till
-            // this new node is reached again. After hitting back again this node
-            // will create it's finger table
-            socket = new Socket(IP, Integer.valueOf(successorNodePort));
-            dos = new DataOutputStream(socket.getOutputStream());
-            toWrite = "UpdateFingerTables\t" + String.valueOf(nodeHash) + "\t" + String.valueOf(port)
-                    + "\t" + successorNodeHash + "\t" + successorNodePort + "\n";
-            dos.writeBytes(toWrite);
-            dos.flush();
-            socket.close();
+                // send a command to its successor node to update its file responsibility
+                // the successor node will update its responsibility and reply back with
+                // this new node's responsibility
+                socket = new Socket(IP, Integer.valueOf(successorNodePort));
+                dos = new DataOutputStream(socket.getOutputStream());
+                toWrite = "UpdateFileList\t" + String.valueOf(nodeHash) + "\n";
+                dos.writeBytes(toWrite);
+                dos.flush();
+                isr = new InputStreamReader(socket.getInputStream());
+                br = new BufferedReader(isr);
+                String receivedData = br.readLine();
+                socket.close();
+                String[] data = receivedData.split(";");
+                ArrayList<String> received = new ArrayList<>(Arrays.asList(data));
+                WriteToFile(String.valueOf(port) + "_files", received);
 
+                // send a command to its successor node to update its finger table
+                // the successor node will in-turn forward this to its own successor till
+                // this new node is reached again. After hitting back again this node
+                // will create it's finger table
+                socket = new Socket(IP, Integer.valueOf(successorNodePort));
+                dos = new DataOutputStream(socket.getOutputStream());
+                toWrite = "UpdateFingerTables\t" + String.valueOf(nodeHash) + "\t" + String.valueOf(port)
+                        + "\t" + successorNodeHash + "\t" + successorNodePort + "\n";
+                dos.writeBytes(toWrite);
+                dos.flush();
+                socket.close();
+
+                CreateDirectories();
+            }
         } catch (Exception ex) {
             ex.printStackTrace();
         }
@@ -336,6 +347,31 @@ public class Main {
         }
         responsibility.add(0, "min\t" + String.valueOf((nodeHash + 1) % N));
         WriteToFile(String.valueOf(MASTER_PORT) + "_files", responsibility);
+        CreateDirectories();
+    }
+
+    private static void CreateDirectories() {
+        File theDir = new File(FILE_DIRECTORY + String.valueOf(myPort));
+        if (!theDir.exists()) {
+            try {
+                theDir.mkdir();
+            } catch (SecurityException se) {
+            }
+        }
+        File theDir1 = new File(FILE_DIRECTORY + String.valueOf(myPort) + "/upload");
+        if (!theDir1.exists()) {
+            try {
+                theDir1.mkdir();
+            } catch (SecurityException se) {
+            }
+        }
+        File theDir2 = new File(FILE_DIRECTORY + String.valueOf(myPort) + "/download");
+        if (!theDir2.exists()) {
+            try {
+                theDir2.mkdir();
+            } catch (SecurityException se) {
+            }
+        }
     }
 
     private static void ListenToSocket(final int hash, final int port) {
@@ -373,7 +409,7 @@ public class Main {
                                 dos.writeBytes(dataToSend + "\n");
                                 dos.flush();
                             } else if (command.contains("filename")) {
-                                System.out.println("File name query on port " + String.valueOf(port));
+//                                System.out.println("File name query on port " + String.valueOf(port));
                                 String[] temp = command.split("\t");
                                 String dataToSend = getFileDestinationPort(String.valueOf(port), Integer.parseInt(temp[1]));
                                 DataOutputStream dos = new DataOutputStream(os);
@@ -394,11 +430,16 @@ public class Main {
                             }
                         }
                     } catch (Exception ex) {
-                        //ex.printStackTrace();
+//                        ex.printStackTrace();
+                        alreadyListening = false;
                         listener.close();
                     }
+                } catch (BindException ignored) {
+                    alreadyListening = false;
+                    System.out.println("Another process is already listening on port " + String.valueOf(port));
                 } catch (Exception ignored) {
-                    //ignored.printStackTrace();
+//                    ignored.printStackTrace();
+                    alreadyListening = false;
                 }
             }
         }).start();
