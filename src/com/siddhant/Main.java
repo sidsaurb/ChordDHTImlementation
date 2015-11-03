@@ -19,8 +19,11 @@ public class Main {
     static String FINGER_TABLE_DIRECTORY = "/home/siddhant/Documents/cs425/project/fingertables/";
     static String FILE_DIRECTORY = "/home/siddhant/Documents/cs425/project/files/";
 
-    static int N = 65536;
-    static int logN = 16;
+//    static int N = 65536;
+//    static int logN = 16;
+
+    static int N = 64;
+    static int logN = 6;
 
     public static boolean alreadyListening = false;
     public static int myPort = 0;
@@ -149,6 +152,7 @@ public class Main {
         }
     }
 
+    // takes port which has the file and downloads the file from it
     private static void DownloadFile(String filePort, String filename) {
         try {
             Socket socket = new Socket(IP, Integer.parseInt(filePort));
@@ -167,6 +171,7 @@ public class Main {
         }
     }
 
+    // copies the streams
     static void copy(InputStream in, OutputStream out) throws IOException {
         byte[] buf = new byte[8192];
         int len;
@@ -177,16 +182,24 @@ public class Main {
 
     private static void uploadFile(int fileHash) {
         try {
-            String portOfFile = getSuccessorPort(String.valueOf(getHash(myPort)), String.valueOf(fileHash));
+//            String portOfFile = getSuccessorPort(String.valueOf(getHash(myPort)), String.valueOf(fileHash));
+            String portOfFile = getSuccessorPort(String.valueOf((myPort)), String.valueOf(fileHash));
+
+            // if my responsibility
             if (Integer.parseInt(portOfFile) == myPort) {
                 String fileDestinationPort = getFileDestinationPort(portOfFile, fileHash);
                 if (fileDestinationPort.equals("null")) {
+                    // update the files table to point to the same port
                     changeFilePort(portOfFile, fileHash, portOfFile);
                     System.out.println("File uploaded");
                 } else {
                     System.out.println("File with the same key already exists");
                 }
             } else {
+                // if not my responsibility then forward command to the successor port
+                // but first check if file with same key already exists or not by
+                // sending a filename command to the successor node
+
                 Socket socket1 = new Socket(IP, Integer.parseInt(portOfFile));
                 DataOutputStream dos1 = new DataOutputStream(socket1.getOutputStream());
                 String toWrite1 = "filename\t" + String.valueOf(fileHash) + "\n";
@@ -196,6 +209,7 @@ public class Main {
                 BufferedReader br1 = new BufferedReader(isr1);
                 String fileDestinationPort = br1.readLine();
                 socket1.close();
+                // if file not exists send the file_upload command
                 if (fileDestinationPort.equals("null")) {
                     Socket socket = new Socket(IP, Integer.parseInt(portOfFile));
                     DataOutputStream dos = new DataOutputStream(socket.getOutputStream());
@@ -212,6 +226,7 @@ public class Main {
                         System.out.println("File with the same key already exists");
                     }
                 } else {
+                    // Show error message
                     System.out.println("File with the same key already exists");
                 }
             }
@@ -220,7 +235,9 @@ public class Main {
         }
     }
 
-    private static void changeFilePort(String portOfFile, int fileHash, String filename) {
+    // update file responsibility table of the node, corresponding to the key fileHash to point
+    // to containingPort
+    private static void changeFilePort(String portOfFile, int fileHash, String containingPort) {
         ArrayList<String> contents = new ArrayList<>();
         try (BufferedReader reader = new BufferedReader(new FileReader(FINGER_TABLE_DIRECTORY + portOfFile + "_files"))) {
             String line;
@@ -230,7 +247,7 @@ public class Main {
                 String[] temp = line.split("\t");
                 Integer fileKey = Integer.parseInt(temp[0]);
                 if (fileHash == fileKey) {
-                    contents.add(temp[0] + "\t" + filename);
+                    contents.add(temp[0] + "\t" + containingPort);
                 } else {
                     contents.add(line);
                 }
@@ -243,7 +260,8 @@ public class Main {
 
     private static String getFilePort(int fileHash) {
         try {
-            String portOfFile = getSuccessorPort(String.valueOf(getHash(myPort)), String.valueOf(fileHash));
+//            String portOfFile = getSuccessorPort(String.valueOf(getHash(myPort)), String.valueOf(fileHash));
+            String portOfFile = getSuccessorPort(String.valueOf((myPort)), String.valueOf(fileHash));
             if (Integer.parseInt(portOfFile) == myPort) {
                 String fileDestinationPort = getFileDestinationPort(portOfFile, fileHash);
                 if (fileDestinationPort.equals("null")) {
@@ -275,7 +293,8 @@ public class Main {
 
     private static String getFileRoute(int fileHash) {
         try {
-            String portOfFile = getSuccessorPort(String.valueOf(getHash(myPort)), String.valueOf(fileHash));
+//            String portOfFile = getSuccessorPort(String.valueOf(getHash(myPort)), String.valueOf(fileHash));
+            String portOfFile = getSuccessorPort(String.valueOf((myPort)), String.valueOf(fileHash));
             if (Integer.parseInt(portOfFile) == myPort) {
                 String fileDestinationPort = getFileDestinationPort(portOfFile, fileHash);
                 if (fileDestinationPort.equals("null")) {
@@ -332,8 +351,8 @@ public class Main {
             String successorNodeHash = String.valueOf(getHash(Integer.parseInt(successorNodePort)));
             socket.close();
 
-            if (successorNodePort.equals(String.valueOf(port))) {
-                System.out.println("This node already exists.. try another value");
+            if (successorNodeHash.equals(String.valueOf(getHash(port)))) {
+                System.out.println("Node with the same key already exists.. try another value");
             } else {
 
                 // send a command to its successor node to update its file responsibility
@@ -446,6 +465,7 @@ public class Main {
                                 dos.writeBytes(dataToSend + "\n");
                                 dos.flush();
                             } else if (command.contains("filename")) {
+                                // name is misleading. actually query for port number of a file.
 //                                System.out.println("File name query on port " + String.valueOf(port));
                                 String[] temp = command.split("\t");
                                 String dataToSend = getFileDestinationPort(String.valueOf(port), Integer.parseInt(temp[1]));
@@ -542,6 +562,10 @@ public class Main {
         }
     }
 
+    // update file responsibility table when a new node joins
+    // filename: filename of the file to be updated
+    // nodeHash1: nodeHash of the new node being joined
+    // returns the responsibility of the newly formed node
     private static String updateFileResponsibility(String filename, String nodeHash1) {
         try {
             ArrayList<String> ownList = new ArrayList<>();
@@ -576,6 +600,8 @@ public class Main {
         return "";
     }
 
+
+    // returns a nodes own successor. Node denoted by filename
     private static String getOwnSuccessor(String filename) {
         try {
             try (BufferedReader reader = new BufferedReader(new FileReader(FINGER_TABLE_DIRECTORY + filename))) {
@@ -592,6 +618,7 @@ public class Main {
     }
 
 
+    // returns successor port from a node denoted by filename and query node denoted by queryNodeId
     private static String getSuccessorPort(String filename, String queryNodeId) {
         int min;
         int nodeId = getHash(Integer.parseInt(filename));
@@ -630,6 +657,8 @@ public class Main {
         return "";
     }
 
+
+    // where to forward a query next
     private static String getNextPortFromFingerTable(String filename, String queryNodeId) {
         int key = Integer.parseInt(queryNodeId);
         String previous = "";
@@ -719,8 +748,8 @@ public class Main {
         try {
             md = MessageDigest.getInstance("SHA-1");
             byte[] temp = md.digest(bytes);
-            int hash = temp[1] & 0xFF | temp[0] & 0xFF << 8;
-            return hash;
+            int hash = temp[1] | temp[0];
+            return hash % N;
         } catch (NoSuchAlgorithmException e) {
             return 0;
         }
